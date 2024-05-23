@@ -38,7 +38,11 @@ async function run() {
     });
     //carts collection
     app.get("/carts", async (req, res) => {
-      const result = await cartsCollection.find().toArray();
+      const userEmail = req.query?.email;
+
+      const filter = { email: userEmail };
+
+      const result = await cartsCollection.find(filter).toArray();
       res.send(result);
     });
     app.post("/carts", async (req, res) => {
