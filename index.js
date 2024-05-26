@@ -20,6 +20,24 @@ const client = new MongoClient(uri, {
   },
 });
 
+// custom midlw=eware verify token
+const verifytoken = (req, res, next) => {
+  // console.log("inside verifytoken middleware", req.headers.authorization);
+  if (!req.headers.authorization) {
+    return res.status(401).send({ message: "unauthorised access" });
+  }
+  const token = req.headers.authorization.split(" ")[1];
+  // console.log("get token", token);
+  jwt.verify(token, process.env.ACCESS_SECRET_TOKEN, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "unauthorised access" });
+    }
+    req.decoded = decoded;
+    console.log("from verifytoken decoded", decoded);
+    next();
+  });
+};
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -30,10 +48,29 @@ async function run() {
     const reviewsCollection = client.db("bistroDb").collection("reviews");
     const cartsCollection = client.db("bistroDb").collection("carts");
 
+    // custom middleware
+    // custom middleware
+    // verify token middlwware
+
+    // verify admin after checking verfytoken
+    const verifyadmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      console.log("verify admin ", email);
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.role === "admin";
+      console.log("inside verifyadmin", isAdmin);
+      if (!isAdmin) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
+
     // jwt related api
 
     app.post("/jwt", async (req, res) => {
       const userinfo = req.body;
+      console.log("inside jwt", userinfo);
       const token = await jwt.sign(userinfo, process.env.ACCESS_SECRET_TOKEN, {
         expiresIn: "4h",
       });
@@ -42,31 +79,35 @@ async function run() {
       res.send({ token });
     });
 
-    // verify token middlwware
-    const verifytoken = (req, res, next) => {
-      // console.log("inside verifytoken middleware", req.headers.authorization);
-      if (!req.headers.authorization) {
-        res.status(401).send({ message: "unauthorised access" });
-      }
-      const token = req.headers.authorization.split(" ")[1];
-      console.log("get token", token);
-      jwt.verify(
-        token,
-        process.env.ACCESS_SECRET_TOKEN,
-        async (err, decoded) => {
-          if (err) {
-            res.status(401).send({ message: "unauthorised access" });
-          }
-          req.decoded = decoded;
-          next();
-        }
-      );
-    };
-
     // user related api
-    app.get("/users", verifytoken, async (req, res) => {
+
+    app.get("/users", verifytoken, verifyadmin, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
+    });
+
+    // check admin
+    app.get("/users/admin/:email", verifytoken, async (req, res) => {
+      const email = req.params.email;
+      console.log("inside useAdmin route", req.decoded.email);
+      console.log("inside useAdmin params", email);
+
+      if (email !== req.decoded.email) {
+        return res.status(401).send({
+          message: "Unauthorize access",
+        });
+      }
+      const query = {
+        email: email,
+      };
+      console.log(query);
+      const user = await userCollection.findOne(query);
+      console.log("inside useAdmin route", user);
+      let admin = false;
+      if (user) {
+        admin = user?.role === "admin";
+      }
+      res.send({ admin });
     });
 
     app.post("/users", async (req, res) => {
@@ -90,7 +131,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/users/:id", async (req, res) => {
+    app.delete("/users/:id", verifytoken, verifyadmin, async (req, res) => {
       const id = req.params.id;
       const query = {
         _id: new ObjectId(id),
@@ -100,17 +141,22 @@ async function run() {
     });
 
     // make admin role
-    app.patch("/users/admin/:id", async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updatedDoc = {
-        $set: {
-          role: "admin",
-        },
-      };
-      const result = await userCollection.updateOne(filter, updatedDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/users/admin/:id",
+      verifytoken,
+      verifyadmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: {
+            role: "admin",
+          },
+        };
+        const result = await userCollection.updateOne(filter, updatedDoc);
+        res.send(result);
+      }
+    );
 
     // menu related api
 
