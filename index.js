@@ -166,6 +166,22 @@ async function run() {
       const result = await menuCollection.findOne(query);
       res.send(result);
     });
+    app.patch("/menu/:id", verifytoken, verifyadmin, async (req, res) => {
+      const id = req.params.id;
+      const item = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedoc = {
+        $set: {
+          name: item.name,
+          category: item.category,
+          price: item.price,
+          recipe: item.recipe,
+          image: item.image,
+        },
+      };
+      const result = await menuCollection.updateOne(filter, updatedoc);
+      res.send(result);
+    });
 
     app.delete("/menu/:id", verifytoken, verifyadmin, async (req, res) => {
       const id = req.params.id;
